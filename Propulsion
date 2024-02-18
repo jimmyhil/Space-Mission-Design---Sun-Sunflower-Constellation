@@ -1,0 +1,329 @@
+Constants
+% Radius Earth
+R_earth=6378000; % m
+
+% Gravity Sun
+mu_sun = 1.32712*10^20; % m^3/s^2
+
+% Gravity Parameter Earth
+mu_earth = 3.986*10^14; % m^3/s^2
+
+% Earth acceleration
+g = 9.81;
+
+% Final Mass of Spacecraft (Dry mass, without propellant)
+m_f_chemical = 700; % kg
+
+% Distance Earth-Sun
+D = 1.49599*10^11; % m
+
+% Mass Earth
+m_earth =5.972 * 10^24; % kg
+
+% Mass of Sun 
+m_sun = 332.946 * m_earth; % kg
+
+% Sphere of Influence Earth
+R_SOI = 924000000 ;% m
+Orbit Parameter LEO
+% Altitude Periapsis
+h_peri_initial = 600*10^3; % m
+
+% Altitude Apoapsis
+h_apo_initial = 600*10^3; % m
+
+% Semi-major axis 
+a_initial = (R_earth+h_peri_initial + R_earth+h_apo_initial)/2; % m
+
+% Escape Radius 
+r_esc = R_earth+h_peri_initial;  % m
+Earth Escape with Chemical Propulsion
+Initial deltaV estimations before STK simulation was performed
+1st rough estimation of deltaV: LEO -> Edge SOI Earth (Not used in final report)
+% Hohmann Transfer LEO -> SOI
+v_leo = sqrt(mu_earth/(R_earth+h_peri_initial)) ; % m/s
+v_soi = sqrt(mu_earth/R_SOI);  % m/s
+a_hohmann = ((R_earth+h_peri_initial)+R_SOI)/2; % m
+Isp_estimated = 300;
+deltaV_SOI = ((v_leo - v_soi)*(((sqrt(R_earth+h_peri_initial)+sqrt(R_SOI))/sqrt(a_hohmann))-1) )/1000; %km/s
+fprintf('Delta V to reach SOI of Earth from circular orbit: %.2f km/s', deltaV_SOI);
+
+m_p_SOI = m_f_chemical*exp((deltaV_SOI*1000)/(Isp_estimated*g))-m_f_chemical ; % kg
+fprintf('Propellant mass to reach SOI of Earth: %.2f kg', m_p_SOI);  
+2nd rough estimation of deltaV for Earth escape with apogee raising technique (not used in final calculations as STK simulation is performed)
+% Must be adapted depending on Mono or Bi Propellant
+Isp_chemical = 300; % s
+
+Thrust_chemical = 400; % N
+
+%% Calculations with escape velocity %% 
+
+% Escape Velocity
+v_esc = sqrt(2*mu_earth/r_esc) /1000;  % km/s
+%fprintf('Escape Velocity Earth: %.3f km/s', v_esc);
+
+% Initial Velocity Perigee
+v_peri_0 = sqrt((2*mu_earth/(R_earth+h_peri_initial))-(mu_earth/a_initial)) /1000;  % km/s
+%fprintf('Initial Velocity at Perigee: %.3f km/s', v_peri_0);
+
+% Propulsion demand Earth espace
+deltaV_escape = v_esc-v_peri_0; % km/s
+%fprintf('Delta V needed for escape: %.3f km/s', deltaV_escape);
+
+% Burn Time in s
+t_burn = 500; % s
+
+% Initialize variables
+h_peri = h_peri_initial;
+h_apo = h_apo_initial;
+a = a_initial ; 
+
+% Calculate orbital velocity at perigee
+v_peri = sqrt((2 * mu_earth / (R_earth + h_peri)) - (mu_earth / a)) / 1000;
+
+% Initial mass of SC with propellant
+m_0 = 1000;
+% Calculate burnt propellant mass (remains constant)
+m_p_b = Thrust_chemical * t_burn / (Isp_chemical * g);
+
+% Loop until the orbital velocity at perigee reaches the escape velocity
+num_burning_phases = 0;
+v_soi = sqrt(mu_earth/R_SOI);
+while true    
+
+    % Calculate deltaV produced by a single thrust phase (changes over time due to changing SC mass)
+    deltaV_single_burn = -Isp_chemical * g * log(1 - (m_p_b / (m_0 + m_p_b))) / 1000; % km/s
+
+    % New velocity at perigee
+    v_peri = (v_peri + deltaV_single_burn);
+
+    % New semi-major axis with increased perigee velocity
+    a = mu_earth / (((2*mu_earth/(R_earth+h_peri_initial))-((v_peri_0/1000)^2)));
+
+    % New Apogee altitude
+    h_apo = 2*a -2*R_earth- h_peri_initial;
+  
+    % Update the mass of the satellite
+    m_0 = m_0 - m_p_b;
+
+    % Increment the number of burning phases
+    num_burning_phases = num_burning_phases + 1;
+
+    % Check if the orbital velocity at perigee reaches or exceeds escape velocity
+    if v_peri < v_soi
+        break;
+    end
+end
+
+% Display the results
+%fprintf('Number of burning phases needed: %d\n', num_burning_phases);
+%fprintf('Final orbital velocity at perigee: %.2f km/s\n', v_peri);
+%fprintf('Final apogee altitude: %.2f km\n', h_apo / 1000);
+
+% Propulsion Mass needed
+m_p = m_p_b * num_burning_phases; % kg (Without Margin)
+m_p = m_p + m_p*0.25; % kg (With 25% margin)
+fprintf('Propellant Mass with apogee raising technique with 25 percent margin: %.2f kg', m_p);
+
+Thruster design and performance (Here it actually starts)
+%% Constants Thruster %%
+k = 1.219; % Specific Heat Ratio
+D_throat = 0.017; % m
+A_throat = pi  * (D_throat/2)^2 % m^2
+p_combustion = 1000000; % Pa
+Area_ratio = 1/300; % Expansion Ratio Nozzle -> A_throat / A_exit
+A_exit = A_throat/Area_ratio
+d_exit = 2*sqrt(A_exit/pi)
+T_combustion = 3385 ; % K 
+R = 8.31446; % Universal Gas Constant
+M = 0.0320452; % Molar Mass of Gas in kg/mol
+R_gas  = 381; %R/M; % Specific Gas Constant in J/kgK
+fprintf('Specific Gas constant: %.2f J/kgK', R_gas);
+p_vac = 0; % Vacuum Pressure
+
+% Nozzle Exit Pressure calculation based on Area ratio and combustion pressure
+syms p_exit
+eqn = (((k+1)/2)^(1/(k-1)))*((p_exit/p_combustion)^(1/k))*sqrt(((k+1)/(k-1))*(1-((p_exit/p_combustion)^((k-1)/k)))) == Area_ratio ;
+p_exit = double(vpasolve(eqn, p_exit));
+fprintf('Exit Pressure: %.2f Pa', p_exit);
+
+% Thrust coefficent
+C_F_ideal = sqrt(((2*k^2)/(k-1))*((2/(k+1))^((k+1)/(k-1)))*(1-((p_exit/p_combustion)^((k-1)/k)))) +(((p_exit-p_vac)/p_combustion)* (1/Area_ratio)); % Dimensionless
+
+% Characteristic velocity
+c_star_ideal = 1/k * sqrt(k*R_gas*T_combustion*((k+1)/2)^((k+1)/(k-1))); % m/s
+
+% Correction with Nozzle efficiency 
+eta_nozzle = 0.97;
+C_F_cor = C_F_ideal*eta_nozzle;
+fprintf('Thrust coefficient: %.2f ', C_F_cor);
+c_star_cor = c_star_ideal*eta_nozzle;
+fprintf('Characteristic velocity: %.2f m/s', c_star_cor);
+
+% Massflow
+massflow =1000* p_combustion*A_throat/c_star_cor;
+%massflow = ((A_throat*p_combustion*k)/sqrt(k*R_gas*T_combustion)) * sqrt((2/k+1)^((k+1)/(k-1))); % g/s
+fprintf('Massflow: %.4f g/s', massflow);
+
+% Exhaust velocity 
+v_e = sqrt(2*(k/(k-1))*R_gas*T_combustion*(1-(p_exit/p_combustion)^((k-1)/k)));
+fprintf('Exhaust velocity: %.2f m/s', v_e);
+
+% Resulting Thust and Isp
+Thrust = (massflow/1000) *c_star_cor*C_F_cor;
+fprintf('Thrust: %.2f N', Thrust);
+Isp_nozzle = C_F_cor*c_star_cor/g;
+fprintf('Isp: %.2f s',Isp_nozzle);
+
+
+This is not used in the final calculations (mistake somewhere)
+%% Nozzle Shape &&
+t_s = 0.001; % s, residence time in chombustion chamber
+D_c = 10*D_throat; % Diameter combustion chamber
+A_c = pi*(D_c/2)^2;
+alpha = 45; % constriction angle 
+L_con = ((D_c/2)-(D_throat/2))/(tand(alpha)) ; % constriction length based on constriction angle
+fprintf('Constriciton Length: %.5f m', L_con);
+
+V_c = t_s*A_throat*sqrt(k*R_gas*T_combustion)*(2/(k+1))^(1/(k-1)); % m^3, Volume combustion chamber
+fprintf('Volume combustion chamber: %.10f mm^3', V_c*10^9);
+
+L_c = (V_c-(A_c*L_con*(1+sqrt(A_throat/A_c)+(A_throat/A_c))))/A_c
+fprintf('Length combustion chamber: %.4f mm', L_c*10^3);
+
+% Length Divergent Part of the nozzle
+beta = 15;
+A_exit = A_throat/Area_ratio
+D_exit = sqrt(A_exit/pi)*2
+fprintf('Exit Diameter: %.4f m', D_exit);
+L_div = ((D_exit/2)-(D_throat/2))/tand(beta);
+fprintf('Length divergent part: %.2f m', L_div);
+Based on the Nozzle design above, a thruster is chosen:
+S400-15 from "Space-propulsion.com" is chosen as it almost perfectly fits the calculations and is able to be used with MMH and N2O4
+1) Mono Propellant (used in the beginning to trade off propellant mass for mono and bipropellant systems)
+% Density Propellant
+rho_p = 1357 ; % kg/m^3
+% DeltaV
+deltaV_chemical = 3.7; % km/s
+% Isp Monopropellant
+Isp_chemical_mono = 250;
+% Propellant mass
+m_p_chemical_mono = m_f_chemical*exp((deltaV_chemical*1000)/(Isp_chemical_mono*g))-m_f_chemical ; % kg
+fprintf('Propellant mass Mono: %.2f kg', m_p_chemical_mono);
+% Volume Propellant
+V_p = (m_p_chemical_mono/rho_p)*10^3; % dm^3
+fprintf('Mono Propellant Volume: %.2f dm^3', V_p);
+2) Bipropellant (With chosen nozzle) 
+Isp_chemical = 321;
+deltaV_chemical = 4.8; % km/s
+m_p_chemical = m_f_chemical*exp((deltaV_chemical*1000)/(Isp_chemical*g))-m_f_chemical ; % kg
+fprintf('Propellant mass for chemical system: %.2f kg', m_p_chemical);  
+
+% O/F Ratio
+OF = 1.65
+
+% Oxidiser
+m_o = OF*m_p_chemical/(1+OF); % Oxidiser Mass
+fprintf('Oxidiser Mass: %.2f kg', m_o);
+
+rho_o = 1431 ; % kg/m^3
+V_o = (m_o/rho_o)*10^3; % dm^3
+fprintf('Oxidiser Volume: %.2f dm^3', V_o);
+
+% Fuel
+m_f_chemical = m_p_chemical - m_o;
+fprintf('Fuel Mass: %.2f kg', m_f_chemical);
+
+rho_f = 874 ; % kg/m^3
+V_f = (m_f_chemical/rho_f)*10^3; % dm^3
+fprintf('Fuel Volume: %.2f dm^3', V_f);
+
+Deep Space Cruise Phase with Electrical Propulsion
+Thrust_SEP =325; % mN
+U_d = 300; % V
+molar_mass  = 131.2; % kg/kmol (Xenon)
+alpha_SEP = 0.9;
+e = 96485332.89; % Faraday constant, electric charge per kmol (C/kmol)
+% Massflow
+C_t1 = alpha_SEP*sqrt(2*e/molar_mass);
+massflow_SEP = Thrust_SEP/(C_t1*sqrt(U_d))*1000;
+fprintf('Propellant massflow for SEP: %.4f g/s', massflow_SEP); 
+
+% Propellant Mass
+deltaV_SEP = 1.5; % km/s
+m_f_2 = 500; % New final mass since chemical propulsion system is dropped
+Isp_electrical = 2029; % High thrust mode
+m_Xenon = m_f_2*exp((deltaV_SEP*1000)/(Isp_electrical*g))-m_f_2 ; % kg
+fprintf('Xenon mass: %.2f kg', m_Xenon);  
+
+% Xenon Tank sizing
+rho_Xenon = 3000; % kg/m^2
+V_Xenon = 1000*m_Xenon/rho_Xenon % liter or dm^3
+fprintf('Xenon tank volume: %.2f kg', V_Xenon); 
+
+Hall Thruster Sizing (not used, some mistakes)
+% Isp
+U_d = 500;
+m_ion = 131.23;
+
+C_isp = sqrt(2*e/m_ion)/g
+Isp = C_isp*sqrt(U_d)
+
+% Ion exit velocity
+v_e = sqrt((2*e/m_ion)*U_d)
+
+% Thrust
+alpha_e = 0.9;
+massflow_xenon = 5; % mu*g/s
+
+C_t1 = alpha_e*sqrt(2*e/m_ion )
+T = C_t1 *massflow_xenon*sqrt(U_d)
+
+% Another relation for thrust:
+v_e = 2*10^6; % m/s for electron temperature of 10eV and gas temp of 800K
+v_n = 320; % m/s
+m_n = 1*10^(19); % 1/m^3
+sigma_i = 5*10^(-20); % m^2
+beta_e = 0.007; % with database as the L size is known
+C_t2 = alpha_e * m_n * v_n * pi * v_n/(beta_e*sigma_i*v_e)*sqrt(2*e/m_ion)
+
+%T_2 = C_t2*1/L *sqrt(U_d)*h*d
+
+% Input power
+h = 2
+d = 2
+C_p = e*U_d*alpha_e*massflow_xenon/(m_n*h*d)
+P = C_p * h*d
+
+
+molar_mass  = 131.2; % kg/kmol     
+e = 96485332.89; % Faraday constant, electric charge per kmol (C/kmol)
+P_in = 5000; % W
+eta_e = 0.59; % Electrical efficiency 
+Isp_electrical = 2029;
+
+P_b = P_in * eta_e
+fprintf('Beam Power: %.2f W', P_b);
+
+V_screen = 1800; % Potential Screen Grid in V
+V_acc = -300; % Potential Acceleration Grid in V, negatively biased to the SC
+V_b = V_screen-V_acc; % Potential Difference
+
+I_b = 300;  %P_b/V_b; % Beam current
+fprintf('Beam Current: %.2f V', I_b);
+
+Thrust_electrical = sqrt(2*molar_mass/e)*I_b*sqrt(V_b);
+fprintf('Thrust electrical: %.4f N', Thrust_electrical);
+
+massflow_electrical = 1; % mu*g/s, Propellant flow rate 
+%Isp_electrical = sqrt(2*molar_mass*V_b/e)*(I_b/(massflow_electrical*g));
+fprintf('Isp Electrical: %.4f s', Isp_electrical);
+
+% Propellant Mass
+deltaV_DS = 2; % km/s
+
+m_f_2 = 850;
+
+Isp_electrical = 2029;
+m_Xenon = m_f_2*exp((deltaV_DS*1000)/(Isp_electrical*g))-m_f_2 ; % kg
+fprintf('Propellant mass for SEP in deep space: %.4f kg', m_Xenon);  
